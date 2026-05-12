@@ -58,6 +58,9 @@ interface ConversationDetail {
     tokensOut: number;
     costUsd: number;
     latencyMs: number;
+    sentiment: string | null;
+    language: string | null;
+    imageUrls: string | null;
     createdAt: string;
   }[];
 }
@@ -107,6 +110,9 @@ export function HistoryView() {
         tokensOut: m.tokensOut,
         costUsd: m.costUsd,
         latencyMs: m.latencyMs,
+        sentiment: m.sentiment || undefined,
+        language: m.language || undefined,
+        imageUrls: m.imageUrls ? m.imageUrls.split(',') : undefined,
       }));
 
       setChatMessages(messages);

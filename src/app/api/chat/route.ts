@@ -53,10 +53,36 @@ export async function POST(request: NextRequest) {
       // Separate system message from messages
       const anthropicMessages = messages
         .filter((m: { role: string }) => m.role !== 'system')
-        .map((m: { role: string; content: string }) => ({
-          role: m.role,
-          content: m.content,
-        }));
+        .map((m: { role: string; content: string | unknown[] }) => {
+          // Handle vision format - convert image_url to Anthropic format
+          if (Array.isArray(m.content)) {
+            const anthropicContent = m.content.map((part: { type: string; text?: string; image_url?: { url: string } }) => {
+              if (part.type === 'text') {
+                return { type: 'text', text: part.text };
+              }
+              if (part.type === 'image_url' && part.image_url?.url) {
+                const url = part.image_url.url;
+                if (url.startsWith('data:')) {
+                  const match = url.match(/^data:(image\/[^;]+);base64,(.+)$/);
+                  if (match) {
+                    return {
+                      type: 'image',
+                      source: {
+                        type: 'base64',
+                        media_type: match[1],
+                        data: match[2],
+                      },
+                    };
+                  }
+                }
+                return { type: 'text', text: `[Image: ${url}]` };
+              }
+              return part;
+            });
+            return { role: m.role, content: anthropicContent };
+          }
+          return { role: m.role, content: m.content };
+        });
 
       const systemContent = systemPrompt || messages.find((m: { role: string }) => m.role === 'system')?.content;
 
@@ -64,7 +90,7 @@ export async function POST(request: NextRequest) {
         model,
         max_tokens: maxTokens,
         messages: anthropicMessages,
-        ...(systemContent ? { system: systemContent } : {}),
+        ...(systemContent ? { system: typeof systemContent === 'string' ? systemContent : JSON.stringify(systemContent) } : {}),
         temperature,
         top_p: topP,
         stream,
@@ -100,6 +126,7 @@ export async function POST(request: NextRequest) {
       if (systemPrompt) {
         openaiMessages.push({ role: 'system', content: systemPrompt });
       }
+      // Pass messages through, preserving vision format (content as array)
       openaiMessages.push(...messages);
 
       requestBody = JSON.stringify({
@@ -272,9 +299,9 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const stream = response.body!.pipeThrough(transformStream);
+    const responseStream = response.body!.pipeThrough(transformStream);
 
-    return new Response(stream, {
+    return new Response(responseStream, {
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',

@@ -40,6 +40,9 @@ model Message {
   tokensOut      Int          @default(0)
   latencyMs      Int          @default(0)
   costUsd        Float        @default(0)
+  sentiment      String?
+  language       String?
+  imageUrls      String?
   createdAt      DateTime     @default(now())
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 }
@@ -55,4 +58,36 @@ model UsageLog {
   success   Boolean  @default(true)
   error     String?
   createdAt DateTime @default(now())
+}
+
+model MemoryNote {
+  id        String   @id @default(cuid())
+  key       String
+  value     String
+  source    String   @default("manual")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model KnowledgeDoc {
+  id        String   @id @default(cuid())
+  title     String
+  content   String
+  type      String   @default("text")
+  source    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserPreferences {
+  id              String   @id @default(cuid())
+  language        String   @default("en")
+  responseTone    String   @default("balanced")
+  enableMemory    Boolean  @default(true)
+  enableSentiment Boolean  @default(true)
+  monthlyBudget   Float    @default(0)
+  budgetAlert     Boolean  @default(false)
+  dataRetention   String   @default("forever")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }

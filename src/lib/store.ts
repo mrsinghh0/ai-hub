@@ -10,6 +10,9 @@ export interface ChatMessage {
   tokensOut?: number;
   costUsd?: number;
   latencyMs?: number;
+  sentiment?: 'positive' | 'negative' | 'neutral';
+  language?: string;
+  imageUrls?: string[];
 }
 
 export interface KeyTestResult {
@@ -33,6 +36,32 @@ export interface QuickPrompt {
   category: string;
 }
 
+export interface MemoryNote {
+  id: string;
+  key: string;
+  value: string;
+  source: string;
+}
+
+export interface KnowledgeDoc {
+  id: string;
+  title: string;
+  content: string;
+  type: string;
+  source?: string;
+}
+
+export interface UserPrefs {
+  id: string;
+  language: string;
+  responseTone: string;
+  enableMemory: boolean;
+  enableSentiment: boolean;
+  monthlyBudget: number;
+  budgetAlert: boolean;
+  dataRetention: string;
+}
+
 export const QUICK_PROMPTS: QuickPrompt[] = [
   { id: 'general', name: 'General Chat', icon: '💬', prompt: 'You are a helpful, friendly AI assistant. Answer questions clearly and concisely.', category: 'General' },
   { id: 'coder', name: 'Code Expert', icon: '💻', prompt: 'You are an expert software engineer. Write clean, efficient, well-documented code. Always explain your approach and include error handling. Use best practices and modern patterns.', category: 'Development' },
@@ -49,7 +78,7 @@ export const QUICK_PROMPTS: QuickPrompt[] = [
 ];
 
 interface AppState {
-  activeTab: 'chat' | 'models' | 'history' | 'analytics' | 'settings';
+  activeTab: 'chat' | 'knowledge' | 'history' | 'analytics' | 'settings';
   setActiveTab: (tab: AppState['activeTab']) => void;
   selectedProvider: string;
   setSelectedProvider: (provider: string) => void;
@@ -77,9 +106,25 @@ interface AppState {
   keyTestResults: Record<string, KeyTestResult>;
   setKeyTestResult: (provider: string, result: KeyTestResult) => void;
   clearKeyTestResults: () => void;
-  // Discovered models from local/custom providers
+  // Discovered models
   discoveredModels: Record<string, string[]>;
   setDiscoveredModels: (provider: string, models: string[]) => void;
+  // Memory & Knowledge
+  memoryNotes: MemoryNote[];
+  setMemoryNotes: (notes: MemoryNote[]) => void;
+  knowledgeDocs: KnowledgeDoc[];
+  setKnowledgeDocs: (docs: KnowledgeDoc[]) => void;
+  // User preferences
+  userPrefs: UserPrefs | null;
+  setUserPrefs: (prefs: UserPrefs) => void;
+  // Voice
+  isListening: boolean;
+  setIsListening: (listening: boolean) => void;
+  // Pending images
+  pendingImages: string[];
+  addPendingImage: (url: string) => void;
+  removePendingImage: (url: string) => void;
+  clearPendingImages: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -133,4 +178,22 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({
       discoveredModels: { ...state.discoveredModels, [provider]: models },
     })),
+  // Memory & Knowledge
+  memoryNotes: [],
+  setMemoryNotes: (notes) => set({ memoryNotes: notes }),
+  knowledgeDocs: [],
+  setKnowledgeDocs: (docs) => set({ knowledgeDocs: docs }),
+  // User preferences
+  userPrefs: null,
+  setUserPrefs: (prefs) => set({ userPrefs: prefs }),
+  // Voice
+  isListening: false,
+  setIsListening: (listening) => set({ isListening: listening }),
+  // Pending images
+  pendingImages: [],
+  addPendingImage: (url) =>
+    set((state) => ({ pendingImages: [...state.pendingImages, url] })),
+  removePendingImage: (url) =>
+    set((state) => ({ pendingImages: state.pendingImages.filter(u => u !== url) })),
+  clearPendingImages: () => set({ pendingImages: [] }),
 }));

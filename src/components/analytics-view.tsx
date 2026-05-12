@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import {
   Select,
   SelectContent,
@@ -10,8 +11,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Activity, DollarSign, Zap, Clock, TrendingUp } from 'lucide-react';
+import { Activity, DollarSign, Zap, Clock, TrendingUp, Wallet } from 'lucide-react';
 import { getProvider } from '@/lib/providers';
+import { useAppStore } from '@/lib/store';
 import {
   BarChart,
   Bar,
@@ -44,6 +46,7 @@ interface AnalyticsData {
 const CHART_COLORS = ['#8b5cf6', '#f59e0b', '#10b981', '#ef4444', '#06b6d4', '#f97316', '#ec4899', '#6366f1', '#84cc16'];
 
 export function AnalyticsView() {
+  const { userPreferences } = useAppStore();
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [days, setDays] = useState('30');
   const [loading, setLoading] = useState(true);
@@ -95,6 +98,11 @@ export function AnalyticsView() {
     date: d.date.slice(5), // MM-DD
   }));
 
+  // Budget calculation
+  const monthlyBudget = userPreferences?.monthlyBudget || 0;
+  const budgetUsed = data.summary.totalCost;
+  const budgetPercent = monthlyBudget > 0 ? Math.min(100, (budgetUsed / monthlyBudget) * 100) : 0;
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -115,6 +123,34 @@ export function AnalyticsView() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-20">
+        {/* Budget Card */}
+        {monthlyBudget > 0 && (
+          <Card className="mb-4">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Wallet className="h-4 w-4 text-amber-500" />
+                <span className="text-sm font-medium">Monthly Budget</span>
+                <Badge
+                  variant={budgetPercent > 80 ? 'destructive' : 'outline'}
+                  className="text-[10px] ml-auto"
+                >
+                  {budgetPercent.toFixed(0)}% used
+                </Badge>
+              </div>
+              <Progress value={budgetPercent} className="h-2 mb-2" />
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>${budgetUsed.toFixed(4)} spent</span>
+                <span>${monthlyBudget.toFixed(2)} budget</span>
+              </div>
+              {budgetPercent > 80 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                  ⚠️ You&apos;ve used over 80% of your monthly budget
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Summary Cards */}
         <div className="grid grid-cols-2 gap-3 mb-6">
           <Card>

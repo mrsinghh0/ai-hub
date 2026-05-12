@@ -3,7 +3,7 @@
 import { useAppStore } from '@/lib/store';
 import { BottomNav } from '@/components/bottom-nav';
 import { ChatView } from '@/components/chat-view';
-import { ModelsView } from '@/components/models-view';
+import { KnowledgeView } from '@/components/knowledge-view';
 import { HistoryView } from '@/components/history-view';
 import { AnalyticsView } from '@/components/analytics-view';
 import { SettingsView } from '@/components/settings-view';
@@ -16,8 +16,8 @@ export default function Home() {
     switch (activeTab) {
       case 'chat':
         return <ChatView />;
-      case 'models':
-        return <ModelsView />;
+      case 'knowledge':
+        return <KnowledgeView />;
       case 'history':
         return <HistoryView />;
       case 'analytics':

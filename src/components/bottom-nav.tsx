@@ -1,12 +1,12 @@
 'use client';
 
 import { useAppStore } from '@/lib/store';
-import { MessageSquare, Cpu, Clock, BarChart3, Settings } from 'lucide-react';
+import { MessageSquare, BookOpen, Clock, BarChart3, Settings } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const tabs = [
   { id: 'chat' as const, label: 'Chat', icon: MessageSquare },
-  { id: 'models' as const, label: 'Models', icon: Cpu },
+  { id: 'knowledge' as const, label: 'Knowledge', icon: BookOpen },
   { id: 'history' as const, label: 'History', icon: Clock },
   { id: 'analytics' as const, label: 'Stats', icon: BarChart3 },
   { id: 'settings' as const, label: 'Settings', icon: Settings },

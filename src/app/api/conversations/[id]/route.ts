@@ -32,7 +32,7 @@ export async function POST(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { role, content, model, provider, tokensIn, tokensOut, latencyMs, costUsd } = body;
+    const { role, content, model, provider, tokensIn, tokensOut, latencyMs, costUsd, sentiment, language, imageUrls } = body;
 
     if (!role || !content) {
       return NextResponse.json({ error: 'Role and content are required' }, { status: 400 });
@@ -49,6 +49,9 @@ export async function POST(
         tokensOut: tokensOut || 0,
         latencyMs: latencyMs || 0,
         costUsd: costUsd || 0,
+        sentiment: sentiment || null,
+        language: language || null,
+        imageUrls: imageUrls || null,
       },
     });
 
