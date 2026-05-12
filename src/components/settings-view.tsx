@@ -25,10 +25,20 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Plus, Trash2, Key, Moon, Sun, Shield, AlertTriangle } from 'lucide-react';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import {
+  Plus, Trash2, Key, Moon, Sun, Shield, AlertTriangle,
+  CheckCircle2, XCircle, Loader2, RefreshCw, ChevronDown,
+  Globe, Zap, Eye, EyeOff,
+} from 'lucide-react';
 import { PROVIDERS } from '@/lib/providers';
 import { toast } from 'sonner';
 import { useTheme } from 'next-themes';
+import { useAppStore, KeyTestResult } from '@/lib/store';
 
 interface ApiKeyItem {
   id: string;
@@ -42,6 +52,7 @@ interface ApiKeyItem {
 
 export function SettingsView() {
   const { theme, setTheme } = useTheme();
+  const { keyTestResults, setKeyTestResult } = useAppStore();
   const [apiKeys, setApiKeys] = useState<ApiKeyItem[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newProvider, setNewProvider] = useState('openrouter');
@@ -49,6 +60,9 @@ export function SettingsView() {
   const [newKey, setNewKey] = useState('');
   const [newBaseUrl, setNewBaseUrl] = useState('');
   const [loading, setLoading] = useState(true);
+  const [testingAll, setTestingAll] = useState(false);
+  const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
+  const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
 
   useEffect(() => {
     loadApiKeys();
@@ -90,6 +104,11 @@ export function SettingsView() {
       }
 
       toast.success('API key added successfully');
+
+      // Auto-test the new key
+      const addedKey = await res.json();
+      testSingleKey(addedKey.provider, addedKey.key, addedKey.baseUrl);
+
       setNewName('');
       setNewKey('');
       setNewBaseUrl('');
@@ -114,22 +133,125 @@ export function SettingsView() {
     }
   };
 
+  // Test a single API key
+  const testSingleKey = async (providerId: string, apiKeyValue?: string, baseUrlValue?: string | null) => {
+    const key = apiKeys.find(k => k.provider === providerId);
+    const keyToTest = apiKeyValue || key?.key || '';
+    const urlToTest = baseUrlValue || key?.baseUrl || undefined;
+
+    if (!keyToTest && providerId !== 'ollama') {
+      toast.error('No API key to test');
+      return;
+    }
+
+    // Set testing state
+    setKeyTestResult(providerId, {
+      provider: providerId,
+      valid: false,
+      testing: true,
+    });
+
+    try {
+      const res = await fetch('/api/keys/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: providerId,
+          apiKey: keyToTest,
+          baseUrl: urlToTest,
+        }),
+      });
+
+      const data = await res.json();
+
+      setKeyTestResult(providerId, {
+        provider: providerId,
+        valid: data.valid,
+        testing: false,
+        latencyMs: data.latencyMs,
+        error: data.error,
+        message: data.message,
+        modelCount: data.modelCount,
+        sampleModels: data.sampleModels,
+        models: data.models,
+        testedAt: Date.now(),
+      });
+
+      if (data.valid) {
+        toast.success(`${PROVIDERS.find(p => p.id === providerId)?.name || providerId}: Key is valid!`);
+      } else {
+        toast.error(`${PROVIDERS.find(p => p.id === providerId)?.name || providerId}: ${data.error || 'Key is invalid'}`);
+      }
+    } catch {
+      setKeyTestResult(providerId, {
+        provider: providerId,
+        valid: false,
+        testing: false,
+        error: 'Test request failed',
+      });
+      toast.error('Failed to test API key');
+    }
+  };
+
+  // Test all configured keys
+  const testAllKeys = async () => {
+    setTestingAll(true);
+    const configuredProviders = [...new Set(apiKeys.filter(k => k.isActive).map(k => k.provider))];
+
+    for (const providerId of configuredProviders) {
+      await testSingleKey(providerId);
+    }
+
+    setTestingAll(false);
+    toast.success(`Tested ${configuredProviders.length} provider(s)`);
+  };
+
   const maskKey = (key: string) => {
     if (key.length <= 8) return '••••••••';
     return '••••••••' + key.slice(-4);
   };
 
-  // Get provider status
+  const toggleKeyVisibility = (id: string) => {
+    setVisibleKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Get provider status with test results
   const providerStatus = PROVIDERS.map(p => ({
     ...p,
     configured: apiKeys.some(k => k.provider === p.id && k.isActive),
+    testResult: keyTestResults[p.id],
   }));
+
+  // Get keys for a specific provider
+  const getKeysForProvider = (providerId: string) =>
+    apiKeys.filter(k => k.provider === providerId);
 
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="px-4 pt-4 pb-2">
-        <h1 className="text-xl font-bold">Settings</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold">Settings</h1>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs gap-1.5"
+            onClick={testAllKeys}
+            disabled={testingAll || apiKeys.length === 0}
+          >
+            {testingAll ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
+            Test All Keys
+          </Button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 pb-20">
@@ -155,35 +277,175 @@ export function SettingsView() {
           </CardContent>
         </Card>
 
-        {/* Provider Status */}
+        {/* Provider Status with Key Testing */}
         <Card className="mb-4">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <Shield className="h-4 w-4" />
-              Provider Status
+              Provider Status & Key Validation
             </CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            <div className="space-y-2">
-              {providerStatus.map(p => (
-                <div key={p.id} className="flex items-center justify-between py-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-base">{p.icon}</span>
-                    <span className="text-sm">{p.name}</span>
-                  </div>
-                  <Badge
-                    variant={p.configured ? 'default' : 'secondary'}
-                    className={`text-[10px] ${p.configured ? 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20' : ''}`}
+            <p className="text-xs text-muted-foreground mb-3">
+              Test your API keys to verify they are valid and working. Click a provider to see details.
+            </p>
+            <div className="space-y-1">
+              {providerStatus.map(p => {
+                const testResult = p.testResult;
+                const isExpanded = expandedProvider === p.id;
+                const providerKeys = getKeysForProvider(p.id);
+
+                return (
+                  <Collapsible
+                    key={p.id}
+                    open={isExpanded}
+                    onOpenChange={(open) => setExpandedProvider(open ? p.id : null)}
                   >
-                    {p.configured ? '✓ Configured' : 'Not set'}
-                  </Badge>
-                </div>
-              ))}
+                    <CollapsibleTrigger asChild>
+                      <div className="flex items-center justify-between py-2 px-2 rounded-lg hover:bg-muted/50 cursor-pointer transition-colors">
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-base">{p.icon}</span>
+                          <span className="text-sm font-medium">{p.name}</span>
+                          {/* Status indicator */}
+                          {p.configured ? (
+                            testResult?.testing ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500" />
+                            ) : testResult?.valid === true ? (
+                              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                            ) : testResult?.valid === false ? (
+                              <XCircle className="h-3.5 w-3.5 text-red-500" />
+                            ) : (
+                              <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
+                                configured
+                              </Badge>
+                            )
+                          ) : (
+                            <Badge variant="secondary" className="text-[9px] px-1.5 py-0">
+                              not set
+                            </Badge>
+                          )}
+                        </div>
+                        <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                      </div>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <div className="ml-8 mr-2 mb-2 space-y-2">
+                        {/* Test result details */}
+                        {testResult && !testResult.testing && (
+                          <div className={`p-2.5 rounded-lg text-xs ${
+                            testResult.valid
+                              ? 'bg-emerald-500/10 border border-emerald-500/20'
+                              : 'bg-red-500/10 border border-red-500/20'
+                          }`}>
+                            <div className="flex items-center gap-1.5 mb-1">
+                              {testResult.valid ? (
+                                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                              ) : (
+                                <XCircle className="h-3.5 w-3.5 text-red-500" />
+                              )}
+                              <span className="font-medium">{testResult.valid ? 'Valid & Working' : 'Invalid / Error'}</span>
+                            </div>
+                            {testResult.message && (
+                              <p className="text-muted-foreground ml-5">{testResult.message}</p>
+                            )}
+                            {testResult.error && (
+                              <p className="text-red-400 ml-5">{testResult.error}</p>
+                            )}
+                            {testResult.latencyMs !== undefined && (
+                              <p className="text-muted-foreground ml-5">Latency: {testResult.latencyMs}ms</p>
+                            )}
+                            {testResult.sampleModels && testResult.sampleModels.length > 0 && (
+                              <div className="ml-5 mt-1">
+                                <span className="text-muted-foreground">Available: </span>
+                                <span className="text-muted-foreground">{testResult.sampleModels.slice(0, 3).join(', ')}{testResult.modelCount && testResult.modelCount > 3 ? ` +${testResult.modelCount - 3} more` : ''}</span>
+                              </div>
+                            )}
+                            {testResult.models && testResult.models.length > 0 && (
+                              <div className="ml-5 mt-1">
+                                <span className="text-muted-foreground">Models: {testResult.models.slice(0, 5).join(', ')}{testResult.models.length > 5 ? ` +${testResult.models.length - 5} more` : ''}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Provider keys list */}
+                        {providerKeys.map(apiKey => (
+                          <div key={apiKey.id} className="flex items-center gap-2 p-2 rounded-lg bg-muted/30">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium truncate">{apiKey.name}</p>
+                              <p className="text-[10px] text-muted-foreground font-mono">
+                                {visibleKeys.has(apiKey.id) ? apiKey.key : maskKey(apiKey.key)}
+                              </p>
+                              {apiKey.baseUrl && (
+                                <p className="text-[10px] text-muted-foreground truncate">
+                                  URL: {apiKey.baseUrl}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 text-muted-foreground"
+                                onClick={() => toggleKeyVisibility(apiKey.id)}
+                              >
+                                {visibleKeys.has(apiKey.id) ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                              </Button>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive">
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete API Key</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      Are you sure you want to delete &quot;{apiKey.name}&quot;? This action cannot be undone.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => deleteApiKey(apiKey.id)}
+                                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                    >
+                                      Delete
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </div>
+                          </div>
+                        ))}
+
+                        {/* Test button */}
+                        {p.configured && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs gap-1.5 w-full"
+                            onClick={() => testSingleKey(p.id)}
+                            disabled={testResult?.testing}
+                          >
+                            {testResult?.testing ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Zap className="h-3 w-3" />
+                            )}
+                            {testResult?.testing ? 'Testing...' : 'Test API Key'}
+                          </Button>
+                        )}
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+                );
+              })}
             </div>
           </CardContent>
         </Card>
 
-        {/* API Keys */}
+        {/* API Keys Management */}
         <Card className="mb-4">
           <CardHeader className="pb-2 pt-4 px-4">
             <div className="flex items-center justify-between">
@@ -257,7 +519,7 @@ export function SettingsView() {
                 )}
                 <div className="flex gap-2">
                   <Button size="sm" className="h-7 text-xs flex-1" onClick={addApiKey}>
-                    Save Key
+                    Save & Test Key
                   </Button>
                   <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setShowAddForm(false)}>
                     Cancel
@@ -285,41 +547,79 @@ export function SettingsView() {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">{apiKey.name}</p>
                         <p className="text-[10px] text-muted-foreground font-mono">
-                          {maskKey(apiKey.key)}
+                          {visibleKeys.has(apiKey.id) ? apiKey.key : maskKey(apiKey.key)}
                         </p>
                       </div>
-                      <Badge variant="outline" className="text-[10px] shrink-0">
-                        {provider?.name || apiKey.provider}
-                      </Badge>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete API Key</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Are you sure you want to delete &quot;{apiKey.name}&quot;? This action cannot be undone.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={() => deleteApiKey(apiKey.id)}
-                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                            >
-                              Delete
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground"
+                          onClick={() => toggleKeyVisibility(apiKey.id)}
+                        >
+                          {visibleKeys.has(apiKey.id) ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground"
+                          onClick={() => testSingleKey(apiKey.provider)}
+                        >
+                          <Zap className="h-3 w-3" />
+                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete API Key</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to delete &quot;{apiKey.name}&quot;? This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => deleteApiKey(apiKey.id)}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
                     </div>
                   );
                 })}
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Connection Test Info */}
+        <Card className="mb-4">
+          <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Globe className="h-4 w-4" />
+              Connection Info
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 space-y-3">
+            <div className="text-xs text-muted-foreground space-y-1.5">
+              <p>The key validation test sends a minimal API request to verify:</p>
+              <ul className="list-disc ml-4 space-y-0.5">
+                <li>API key is valid and authorized</li>
+                <li>Provider server is reachable</li>
+                <li>Available models can be listed</li>
+                <li>Response latency is measured</li>
+              </ul>
+              <p className="mt-2">For Ollama, it checks if the local server is running and lists available models.</p>
+              <p>Test results are shown with green (valid) or red (invalid) indicators next to each provider.</p>
+            </div>
           </CardContent>
         </Card>
 
@@ -331,7 +631,7 @@ export function SettingsView() {
               Danger Zone
             </CardTitle>
           </CardHeader>
-          <CardContent className="px-4 pb-4">
+          <CardContent className="px-4 pb-4 space-y-2">
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" size="sm" className="text-xs">
@@ -351,7 +651,6 @@ export function SettingsView() {
                     className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     onClick={async () => {
                       try {
-                        // Delete all keys
                         for (const key of apiKeys) {
                           await fetch('/api/keys', {
                             method: 'DELETE',

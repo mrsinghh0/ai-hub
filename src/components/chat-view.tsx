@@ -1,6 +1,6 @@
 'use client';
 
-import { useAppStore, ChatMessage } from '@/lib/store';
+import { useAppStore, ChatMessage, QUICK_PROMPTS } from '@/lib/store';
 import { PROVIDERS, getProvider } from '@/lib/providers';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
@@ -8,8 +8,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,7 +27,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Plus, Send, SlidersHorizontal, ChevronDown, Loader2, Bot, User, Trash2 } from 'lucide-react';
+import {
+  Plus, Send, SlidersHorizontal, ChevronDown, Loader2, Bot, User, Trash2,
+  Copy, RotateCcw, Sparkles, Hash, Check, X, MoreHorizontal, Pencil,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 
@@ -57,6 +60,11 @@ function MarkdownRenderer({ content }: { content: string }) {
   );
 }
 
+// Token estimation helper (rough: ~4 chars per token)
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
 export function ChatView() {
   const {
     selectedProvider,
@@ -67,6 +75,8 @@ export function ChatView() {
     setChatMessages,
     addChatMessage,
     updateLastAssistantMessage,
+    removeMessage,
+    updateMessageContent,
     isStreaming,
     setIsStreaming,
     temperature,
@@ -85,6 +95,10 @@ export function ChatView() {
   const [input, setInput] = useState('');
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [baseUrls, setBaseUrls] = useState<Record<string, string>>({});
+  const [showPrompts, setShowPrompts] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -123,6 +137,9 @@ export function ChatView() {
   }, [chatMessages]);
 
   const provider = getProvider(selectedProvider);
+
+  // Estimated tokens for input
+  const estimatedInputTokens = estimateTokens(input + systemPrompt);
 
   const startNewChat = () => {
     setChatMessages([]);
@@ -172,9 +189,9 @@ export function ChatView() {
     }
   };
 
-  const sendMessage = useCallback(async () => {
+  const sendMessage = useCallback(async (overrideMessages?: { role: string; content: string }[]) => {
     const trimmedInput = input.trim();
-    if (!trimmedInput || isStreaming) return;
+    if ((!trimmedInput && !overrideMessages) || isStreaming) return;
 
     const apiKey = apiKeys[selectedProvider];
     if (selectedProvider !== 'ollama' && selectedProvider !== 'custom' && !apiKey) {
@@ -182,34 +199,45 @@ export function ChatView() {
       return;
     }
 
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: trimmedInput,
-    };
-
-    addChatMessage(userMessage);
-    setInput('');
-    setIsStreaming(true);
-
-    // Create conversation if needed
+    let apiMessages: { role: string; content: string }[];
     let convId = currentConversationId;
-    if (!convId) {
-      convId = await createConversation(trimmedInput);
+
+    if (overrideMessages) {
+      // For regeneration: reuse existing messages
+      apiMessages = overrideMessages;
+    } else {
+      const userMessage: ChatMessage = {
+        id: Date.now().toString(),
+        role: 'user',
+        content: trimmedInput,
+      };
+
+      addChatMessage(userMessage);
+      setInput('');
+      setIsStreaming(true);
+
+      // Create conversation if needed
       if (!convId) {
-        setIsStreaming(false);
-        return;
+        convId = await createConversation(trimmedInput);
+        if (!convId) {
+          setIsStreaming(false);
+          return;
+        }
       }
+
+      // Save user message
+      await saveMessage(convId, userMessage);
+
+      // Prepare messages for API
+      apiMessages = chatMessages
+        .filter(m => m.role !== 'system')
+        .concat(userMessage)
+        .map(m => ({ role: m.role, content: m.content }));
     }
 
-    // Save user message
-    await saveMessage(convId, userMessage);
-
-    // Prepare messages for API
-    const apiMessages = chatMessages
-      .filter(m => m.role !== 'system')
-      .concat(userMessage)
-      .map(m => ({ role: m.role, content: m.content }));
+    if (!overrideMessages) {
+      setIsStreaming(true);
+    }
 
     // Add assistant placeholder
     const assistantMessage: ChatMessage = {
@@ -288,14 +316,16 @@ export function ChatView() {
       }
 
       // Save assistant message to DB
-      await saveMessage(convId, {
-        ...assistantMessage,
-        content: fullContent,
-        tokensIn,
-        tokensOut,
-        costUsd,
-        latencyMs,
-      });
+      if (convId) {
+        await saveMessage(convId, {
+          ...assistantMessage,
+          content: fullContent,
+          tokensIn,
+          tokensOut,
+          costUsd,
+          latencyMs,
+        });
+      }
 
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
@@ -328,6 +358,89 @@ export function ChatView() {
     setSelectedProvider(providerId);
     setSelectedModel(modelId);
     toast.success(`Switched to ${getProvider(providerId)?.models.find(m => m.id === modelId)?.name || modelId}`);
+  };
+
+  // Copy message to clipboard
+  const copyMessage = async (msg: ChatMessage) => {
+    try {
+      await navigator.clipboard.writeText(msg.content);
+      setCopiedId(msg.id);
+      toast.success('Copied to clipboard');
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      toast.error('Failed to copy');
+    }
+  };
+
+  // Regenerate last assistant message
+  const regenerateLastResponse = () => {
+    if (isStreaming || chatMessages.length < 2) return;
+
+    // Find the last assistant message
+    let lastAssistantIdx = -1;
+    for (let i = chatMessages.length - 1; i >= 0; i--) {
+      if (chatMessages[i].role === 'assistant') {
+        lastAssistantIdx = i;
+        break;
+      }
+    }
+
+    if (lastAssistantIdx === -1) return;
+
+    // Remove the last assistant message from UI
+    const lastAssistant = chatMessages[lastAssistantIdx];
+    removeMessage(lastAssistant.id);
+
+    // Get all messages up to (but not including) the removed assistant message
+    const messagesForApi = chatMessages
+      .slice(0, lastAssistantIdx)
+      .filter(m => m.role !== 'system')
+      .map(m => ({ role: m.role, content: m.content }));
+
+    if (messagesForApi.length > 0) {
+      // Temporarily clear input and send with override
+      setInput('');
+      sendMessage(messagesForApi);
+    }
+  };
+
+  // Edit user message and resend
+  const startEditing = (msg: ChatMessage) => {
+    setEditingId(msg.id);
+    setEditContent(msg.content);
+  };
+
+  const saveEditAndResend = () => {
+    if (!editingId || !editContent.trim()) return;
+
+    // Find the message being edited
+    const msgIdx = chatMessages.findIndex(m => m.id === editingId);
+    if (msgIdx === -1) return;
+
+    // Remove all messages after this one (including the old assistant response)
+    const remainingMessages = chatMessages.slice(0, msgIdx);
+    // Update the edited message
+    remainingMessages[msgIdx] = { ...remainingMessages[msgIdx], content: editContent.trim() };
+    setChatMessages(remainingMessages);
+    setEditingId(null);
+    setEditContent('');
+
+    // Send with the new message list
+    const apiMsgs = remainingMessages
+      .filter(m => m.role !== 'system')
+      .map(m => ({ role: m.role, content: m.content }));
+
+    setInput('');
+    setTimeout(() => {
+      sendMessage(apiMsgs);
+    }, 100);
+  };
+
+  // Apply quick prompt
+  const applyQuickPrompt = (prompt: string) => {
+    setSystemPrompt(prompt);
+    setShowPrompts(false);
+    toast.success('System prompt applied');
   };
 
   return (
@@ -368,6 +481,20 @@ export function ChatView() {
           </DropdownMenuContent>
         </DropdownMenu>
 
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 shrink-0"
+              onClick={() => setShowPrompts(!showPrompts)}
+            >
+              <Sparkles className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Quick Prompts</TooltipContent>
+        </Tooltip>
+
         <Dialog>
           <DialogTrigger asChild>
             <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0">
@@ -391,6 +518,38 @@ export function ChatView() {
         </Dialog>
       </div>
 
+      {/* Quick Prompts Bar */}
+      {showPrompts && (
+        <div className="border-b px-3 py-2 bg-muted/30">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-muted-foreground">Quick System Prompts</span>
+            <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setShowPrompts(false)}>
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+          <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+            {QUICK_PROMPTS.map((qp) => (
+              <button
+                key={qp.id}
+                onClick={() => applyQuickPrompt(qp.prompt)}
+                className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-background border text-xs hover:bg-accent transition-colors"
+              >
+                <span>{qp.icon}</span>
+                <span>{qp.name}</span>
+              </button>
+            ))}
+          </div>
+          {systemPrompt && (
+            <div className="mt-2 flex items-center gap-2 p-2 rounded-lg bg-background border">
+              <p className="text-[11px] text-muted-foreground flex-1 truncate">{systemPrompt}</p>
+              <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0" onClick={() => setSystemPrompt('')}>
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Messages Area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
         {chatMessages.length === 0 && (
@@ -405,9 +564,26 @@ export function ChatView() {
                 <Badge key={cap} variant="secondary" className="text-xs">{cap}</Badge>
               ))}
             </div>
+            {/* Suggested prompts for empty state */}
+            <div className="mt-4 space-y-2 w-full max-w-sm">
+              <p className="text-xs font-medium text-muted-foreground">Try asking:</p>
+              {[
+                'Explain quantum computing in simple terms',
+                'Write a Python function to sort a list',
+                'What are the best practices for REST APIs?',
+              ].map((suggestion) => (
+                <button
+                  key={suggestion}
+                  onClick={() => setInput(suggestion)}
+                  className="w-full text-left text-xs px-3 py-2 rounded-lg bg-muted/50 hover:bg-muted transition-colors truncate"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
           </div>
         )}
-        {chatMessages.map((msg) => (
+        {chatMessages.map((msg, idx) => (
           <div
             key={msg.id}
             className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -417,44 +593,138 @@ export function ChatView() {
                 <Bot className="h-4 w-4 text-muted-foreground" />
               </div>
             )}
-            <div
-              className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${
-                msg.role === 'user'
-                  ? 'bg-primary text-primary-foreground rounded-br-md'
-                  : 'bg-muted rounded-bl-md'
-              }`}
-            >
-              {msg.role === 'assistant' ? (
-                msg.content ? (
-                  <MarkdownRenderer content={msg.content} />
-                ) : (
-                  <div className="flex items-center gap-1 py-1">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    <span className="text-xs text-muted-foreground">Thinking...</span>
+            <div className={`max-w-[85%] group`}>
+              {/* Editing mode for user messages */}
+              {editingId === msg.id ? (
+                <div className="space-y-2">
+                  <Textarea
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    className="text-sm min-h-[60px]"
+                    autoFocus
+                  />
+                  <div className="flex gap-1.5 justify-end">
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setEditingId(null)}>
+                      Cancel
+                    </Button>
+                    <Button size="sm" className="h-7 text-xs" onClick={saveEditAndResend}>
+                      Save & Resend
+                    </Button>
                   </div>
-                )
+                </div>
               ) : (
-                <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-              )}
-              {msg.role === 'assistant' && msg.tokensIn > 0 && msg.content && (
-                <div className="flex items-center gap-2 mt-1 pt-1 border-t border-border/30">
-                  <span className="text-[10px] text-muted-foreground">
-                    {msg.tokensIn + msg.tokensOut} tokens
-                  </span>
-                  {msg.costUsd > 0 && (
-                    <span className="text-[10px] text-muted-foreground">
-                      ${msg.costUsd.toFixed(6)}
-                    </span>
+                <div
+                  className={`rounded-2xl px-3 py-2 text-sm ${
+                    msg.role === 'user'
+                      ? 'bg-primary text-primary-foreground rounded-br-md'
+                      : 'bg-muted rounded-bl-md'
+                  }`}
+                >
+                  {msg.role === 'assistant' ? (
+                    msg.content ? (
+                      <MarkdownRenderer content={msg.content} />
+                    ) : (
+                      <div className="flex items-center gap-1 py-1">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <span className="text-xs text-muted-foreground">Thinking...</span>
+                      </div>
+                    )
+                  ) : (
+                    <p className="whitespace-pre-wrap break-words">{msg.content}</p>
                   )}
-                  {msg.latencyMs > 0 && (
-                    <span className="text-[10px] text-muted-foreground">
-                      {msg.latencyMs}ms
-                    </span>
+                  {msg.role === 'assistant' && msg.tokensIn > 0 && msg.content && (
+                    <div className="flex items-center gap-2 mt-1 pt-1 border-t border-border/30">
+                      <span className="text-[10px] text-muted-foreground">
+                        {msg.tokensIn + msg.tokensOut} tokens
+                      </span>
+                      {msg.costUsd > 0 && (
+                        <span className="text-[10px] text-muted-foreground">
+                          ${msg.costUsd.toFixed(6)}
+                        </span>
+                      )}
+                      {msg.latencyMs > 0 && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {msg.latencyMs}ms
+                        </span>
+                      )}
+                      {msg.provider && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {getProvider(msg.provider)?.icon} {getProvider(msg.provider)?.name}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
+
+              {/* Message Actions - shown on hover */}
+              {!editingId && msg.content && (
+                <div className={`flex items-center gap-0.5 mt-1 opacity-0 group-hover:opacity-100 transition-opacity ${
+                  msg.role === 'user' ? 'justify-end' : 'justify-start'
+                }`}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                        onClick={() => copyMessage(msg)}
+                      >
+                        {copiedId === msg.id ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Copy</TooltipContent>
+                  </Tooltip>
+
+                  {msg.role === 'user' && idx < chatMessages.length && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                          onClick={() => startEditing(msg)}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Edit & Resend</TooltipContent>
+                    </Tooltip>
+                  )}
+
+                  {msg.role === 'assistant' && idx === chatMessages.length - 1 && !isStreaming && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                          onClick={regenerateLastResponse}
+                        >
+                          <RotateCcw className="h-3 w-3" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Regenerate</TooltipContent>
+                    </Tooltip>
+                  )}
+
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                        onClick={() => removeMessage(msg.id)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Delete</TooltipContent>
+                  </Tooltip>
+                </div>
+              )}
             </div>
-            {msg.role === 'user' && (
+            {msg.role === 'user' && editingId !== msg.id && (
               <div className="shrink-0 h-7 w-7 rounded-full bg-primary flex items-center justify-center mt-0.5">
                 <User className="h-4 w-4 text-primary-foreground" />
               </div>
@@ -530,15 +800,24 @@ export function ChatView() {
             </SheetContent>
           </Sheet>
 
-          <Textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Type a message..."
-            className="min-h-[40px] max-h-[120px] resize-none text-sm rounded-xl"
-            rows={1}
-          />
+          <div className="flex-1 relative">
+            <Textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Type a message..."
+              className="min-h-[40px] max-h-[120px] resize-none text-sm rounded-xl pr-16"
+              rows={1}
+            />
+            {/* Token counter */}
+            {input.length > 0 && (
+              <div className="absolute right-2 bottom-1.5 flex items-center gap-1">
+                <Hash className="h-3 w-3 text-muted-foreground" />
+                <span className="text-[10px] text-muted-foreground">~{estimatedInputTokens}</span>
+              </div>
+            )}
+          </div>
 
           {isStreaming ? (
             <Button
@@ -547,13 +826,13 @@ export function ChatView() {
               className="h-9 w-9 shrink-0 rounded-xl"
               onClick={stopStreaming}
             >
-              <Trash2 className="h-4 w-4" />
+              <X className="h-4 w-4" />
             </Button>
           ) : (
             <Button
               size="icon"
               className="h-9 w-9 shrink-0 rounded-xl"
-              onClick={sendMessage}
+              onClick={() => sendMessage()}
               disabled={!input.trim()}
             >
               <Send className="h-4 w-4" />
