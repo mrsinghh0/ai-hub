@@ -1,182 +1,256 @@
-import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:flutter/material.dart';
 
-part 'app_models.freezed.dart';
-part 'app_models.g.dart';
+/// Chat message model
+class ChatMessage {
+  final String id;
+  final String conversationId;
+  final String role;
+  final String content;
+  final String? imageUrl;
+  final double? sentimentScore;
+  final String? language;
+  final int tokensUsed;
+  final double cost;
+  final DateTime createdAt;
 
-// ---- Chat ----
-
-@freezed
-class ChatMessage with _$ChatMessage {
-  const factory ChatMessage({
-    required String id,
-    required String conversationId,
-    required String role,
-    required String content,
-    String? imageUrl,
-    double? sentimentScore,
-    String? language,
-    @Default(0) int tokensUsed,
-    @Default(0.0) double cost,
-    required DateTime createdAt,
-  }) = _ChatMessage;
-  factory ChatMessage.fromJson(Map<String, dynamic> json) => _$ChatMessageFromJson(json);
+  ChatMessage({
+    required this.id,
+    required this.conversationId,
+    required this.role,
+    required this.content,
+    this.imageUrl,
+    this.sentimentScore,
+    this.language,
+    this.tokensUsed = 0,
+    this.cost = 0.0,
+    required this.createdAt,
+  });
 }
 
-@freezed
-class Conversation with _$Conversation {
-  const factory Conversation({
-    required String id,
-    required String title,
-    required String provider,
-    required String model,
-    required DateTime createdAt,
-    required DateTime updatedAt,
-    @Default(0) int messageCount,
-  }) = _Conversation;
-  factory Conversation.fromJson(Map<String, dynamic> json) => _$ConversationFromJson(json);
+/// Conversation model
+class Conversation {
+  final String id;
+  final String title;
+  final String provider;
+  final String model;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final int messageCount;
+
+  Conversation({
+    required this.id,
+    required this.title,
+    required this.provider,
+    required this.model,
+    required this.createdAt,
+    required this.updatedAt,
+    this.messageCount = 0,
+  });
+
+  Conversation copyWith({
+    String? title,
+    DateTime? updatedAt,
+    int? messageCount,
+  }) {
+    return Conversation(
+      id: id,
+      title: title ?? this.title,
+      provider: provider,
+      model: model,
+      createdAt: createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      messageCount: messageCount ?? this.messageCount,
+    );
+  }
 }
 
-// ---- Providers ----
+/// Provider info model
+class ProviderInfo {
+  final String id;
+  final String name;
+  final String baseUrl;
+  final String? apiKeyPrefix;
+  final bool supportsStreaming;
+  final bool supportsVision;
+  final bool isConnected;
+  final String? apiKey;
 
-@freezed
-class ProviderInfo with _$ProviderInfo {
-  const factory ProviderInfo({
-    required String id,
-    required String name,
-    required String baseUrl,
-    String? apiKeyPrefix,
-    @Default(true) bool supportsStreaming,
-    @Default(false) bool supportsVision,
-    @Default(false) bool isConnected,
+  ProviderInfo({
+    required this.id,
+    required this.name,
+    required this.baseUrl,
+    this.apiKeyPrefix,
+    this.supportsStreaming = true,
+    this.supportsVision = false,
+    this.isConnected = false,
+    this.apiKey,
+  });
+
+  ProviderInfo copyWith({
     String? apiKey,
-  }) = _ProviderInfo;
-  factory ProviderInfo.fromJson(Map<String, dynamic> json) => _$ProviderInfoFromJson(json);
+    bool? isConnected,
+  }) {
+    return ProviderInfo(
+      id: id,
+      name: name,
+      baseUrl: baseUrl,
+      apiKeyPrefix: apiKeyPrefix,
+      supportsStreaming: supportsStreaming,
+      supportsVision: supportsVision,
+      isConnected: isConnected ?? this.isConnected,
+      apiKey: apiKey ?? this.apiKey,
+    );
+  }
 }
 
-@freezed
-class ModelInfo with _$ModelInfo {
-  const factory ModelInfo({
-    required String id,
-    required String name,
-    required String provider,
-    String? description,
-    int? contextLength,
-    PricingInfo? pricing,
-    required ModelCapabilities capabilities,
-  }) = _ModelInfo;
-  factory ModelInfo.fromJson(Map<String, dynamic> json) => _$ModelInfoFromJson(json);
+/// Model info
+class ModelInfo {
+  final String id;
+  final String name;
+  final String provider;
+
+  ModelInfo({required this.id, required this.name, required this.provider});
 }
 
-@freezed
-class PricingInfo with _$PricingInfo {
-  const factory PricingInfo({
-    required double promptPerMillion,
-    required double completionPerMillion,
-  }) = _PricingInfo;
-  factory PricingInfo.fromJson(Map<String, dynamic> json) => _$PricingInfoFromJson(json);
-}
-
-@freezed
-class ModelCapabilities with _$ModelCapabilities {
-  const factory ModelCapabilities({
-    @Default(true) bool chat,
-    @Default(false) bool vision,
-    @Default(true) bool streaming,
-    @Default(false) bool functionCalling,
-  }) = _ModelCapabilities;
-  factory ModelCapabilities.fromJson(Map<String, dynamic> json) => _$ModelCapabilitiesFromJson(json);
-}
-
-// ---- Sentiment ----
-
+/// Sentiment label enum
 enum SentimentLabel { veryNegative, negative, neutral, positive, veryPositive }
 
-@freezed
-class SentimentResult with _$SentimentResult {
-  const factory SentimentResult({
-    required double score,
-    required double magnitude,
-    required SentimentLabel label,
-    required List<String> positiveWords,
-    required List<String> negativeWords,
-  }) = _SentimentResult;
-  factory SentimentResult.fromJson(Map<String, dynamic> json) => _$SentimentResultFromJson(json);
+/// Sentiment result
+class SentimentResult {
+  final double score;
+  final double magnitude;
+  final SentimentLabel label;
+  final List<String> positiveWords;
+  final List<String> negativeWords;
+
+  SentimentResult({
+    required this.score,
+    required this.magnitude,
+    required this.label,
+    required this.positiveWords,
+    required this.negativeWords,
+  });
 }
 
-// ---- Language ----
+/// Language result
+class LanguageResult {
+  final String language;
+  final String code;
+  final double confidence;
+  final String script;
 
-@freezed
-class LanguageResult with _$LanguageResult {
-  const factory LanguageResult({
-    required String language,
-    required String code,
-    required double confidence,
-    required String script,
-  }) = _LanguageResult;
-  factory LanguageResult.fromJson(Map<String, dynamic> json) => _$LanguageResultFromJson(json);
+  LanguageResult({
+    required this.language,
+    required this.code,
+    required this.confidence,
+    required this.script,
+  });
 }
 
-// ---- Memory ----
+/// Memory note
+class MemoryNote {
+  final String id;
+  final String key;
+  final String value;
+  final String category;
+  final DateTime createdAt;
+  final DateTime updatedAt;
 
-@freezed
-class MemoryNote with _$MemoryNote {
-  const factory MemoryNote({
-    required String id,
-    required String key,
-    required String value,
-    @Default('general') String category,
-    required DateTime createdAt,
-    required DateTime updatedAt,
-  }) = _MemoryNote;
-  factory MemoryNote.fromJson(Map<String, dynamic> json) => _$MemoryNoteFromJson(json);
+  MemoryNote({
+    required this.id,
+    required this.key,
+    required this.value,
+    this.category = 'general',
+    required this.createdAt,
+    required this.updatedAt,
+  });
 }
 
-// ---- Knowledge ----
+/// Knowledge document
+class KnowledgeDocument {
+  final String id;
+  final String title;
+  final String content;
+  final String? source;
+  final String? tags;
+  final DateTime createdAt;
+  final DateTime updatedAt;
 
-@freezed
-class KnowledgeDocument with _$KnowledgeDocument {
-  const factory KnowledgeDocument({
-    required String id,
-    required String title,
-    required String content,
-    String? source,
-    String? tags,
-    required DateTime createdAt,
-    required DateTime updatedAt,
-  }) = _KnowledgeDocument;
-  factory KnowledgeDocument.fromJson(Map<String, dynamic> json) => _$KnowledgeDocumentFromJson(json);
+  KnowledgeDocument({
+    required this.id,
+    required this.title,
+    required this.content,
+    this.source,
+    this.tags,
+    required this.createdAt,
+    required this.updatedAt,
+  });
 }
 
-// ---- Usage Stats ----
+/// Usage stat
+class UsageStat {
+  final String provider;
+  final String model;
+  final int promptTokens;
+  final int completionTokens;
+  final int totalTokens;
+  final double cost;
+  final int latencyMs;
+  final DateTime createdAt;
 
-@freezed
-class UsageStat with _$UsageStat {
-  const factory UsageStat({
-    required String provider,
-    required String model,
-    required int promptTokens,
-    required int completionTokens,
-    required int totalTokens,
-    required double cost,
-    required int latencyMs,
-    required DateTime createdAt,
-  }) = _UsageStat;
-  factory UsageStat.fromJson(Map<String, dynamic> json) => _$UsageStatFromJson(json);
+  UsageStat({
+    required this.provider,
+    required this.model,
+    required this.promptTokens,
+    required this.completionTokens,
+    required this.totalTokens,
+    required this.cost,
+    required this.latencyMs,
+    required this.createdAt,
+  });
 }
 
-// ---- Preferences ----
+/// User preferences
+class UserPreferences {
+  final double budgetLimit;
+  final int memoryRetentionDays;
+  final bool sentimentEnabled;
+  final bool languageDetectionEnabled;
+  final bool ragEnabled;
+  final bool memoryEnabled;
+  final bool privacyMode;
+  final String defaultLanguage;
 
-@freezed
-class UserPreferences with _$UserPreferences {
-  const factory UserPreferences({
-    @Default(10.0) double budgetLimit,
-    @Default(30) int memoryRetentionDays,
-    @Default(true) bool sentimentEnabled,
-    @Default(true) bool languageDetectionEnabled,
-    @Default(true) bool ragEnabled,
-    @Default(true) bool memoryEnabled,
-    @Default(true) bool privacyMode,
-    @Default('en') String defaultLanguage,
-  }) = _UserPreferences;
-  factory UserPreferences.fromJson(Map<String, dynamic> json) => _$UserPreferencesFromJson(json);
+  UserPreferences({
+    this.budgetLimit = 10.0,
+    this.memoryRetentionDays = 30,
+    this.sentimentEnabled = true,
+    this.languageDetectionEnabled = true,
+    this.ragEnabled = true,
+    this.memoryEnabled = true,
+    this.privacyMode = true,
+    this.defaultLanguage = 'en',
+  });
+
+  UserPreferences copyWith({
+    double? budgetLimit,
+    int? memoryRetentionDays,
+    bool? sentimentEnabled,
+    bool? languageDetectionEnabled,
+    bool? ragEnabled,
+    bool? memoryEnabled,
+    bool? privacyMode,
+    String? defaultLanguage,
+  }) {
+    return UserPreferences(
+      budgetLimit: budgetLimit ?? this.budgetLimit,
+      memoryRetentionDays: memoryRetentionDays ?? this.memoryRetentionDays,
+      sentimentEnabled: sentimentEnabled ?? this.sentimentEnabled,
+      languageDetectionEnabled: languageDetectionEnabled ?? this.languageDetectionEnabled,
+      ragEnabled: ragEnabled ?? this.ragEnabled,
+      memoryEnabled: memoryEnabled ?? this.memoryEnabled,
+      privacyMode: privacyMode ?? this.privacyMode,
+      defaultLanguage: defaultLanguage ?? this.defaultLanguage,
+    );
+  }
 }

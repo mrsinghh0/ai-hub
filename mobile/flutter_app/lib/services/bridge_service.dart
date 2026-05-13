@@ -1,7 +1,3 @@
-import 'dart:ffi';
-import 'dart:io';
-import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
-
 /// Service to communicate with the Rust core engine via flutter_rust_bridge
 class BridgeService {
   static BridgeService? _instance;

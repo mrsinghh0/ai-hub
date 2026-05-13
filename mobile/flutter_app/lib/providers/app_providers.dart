@@ -1,7 +1,7 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../models/app_models.dart';
-import '../services/bridge_service.dart';
 
 // ---- UUID ----
 final _uuid = const Uuid();
@@ -144,4 +144,4 @@ class UsageStatsNotifier extends StateNotifier<List<UsageStat>> {
 }
 
 // ---- User Preferences ----
-final preferencesProvider = StateProvider<UserPreferences>((ref) => const UserPreferences());
+final preferencesProvider = StateProvider<UserPreferences>((ref) => UserPreferences());

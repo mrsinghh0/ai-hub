@@ -186,7 +186,7 @@ class _ProviderBreakdown extends StatelessWidget {
       final existing = providerStats[s.provider] ?? _ProviderStat();
       providerStats[s.provider] = _ProviderStat(
         requests: existing.requests + 1,
-        tokens: existing.tokens + s.totalTokens,
+        tokens: existing.tokens + s.totalTokens as int,
         cost: existing.cost + s.cost,
       );
     }
