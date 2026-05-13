@@ -1,0 +1,69 @@
+[package]
+name = "aihub_core"
+version = "1.0.0"
+edition = "2021"
+description = "AI Hub core engine — multi-provider AI API client, sentiment analysis, language detection, storage"
+license = "MIT"
+
+[lib]
+name = "aihub_core"
+crate-type = ["cdylib", "staticlib", "lib"]
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.40", features = ["full"] }
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"], default-features = false }
+reqwest-streams = "0.7"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Crypto & Security
+ring = "0.17"
+hex = "0.4"
+base64 = "0.22"
+
+# Sentiment analysis
+afinnes = "0.1"
+
+# Language detection
+whatlang = "0.16"
+
+# UUID
+uuid = { version = "1.10", features = ["v4", "serde"] }
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Chrono for dates
+chrono = { version = "0.4", features = ["serde"] }
+
+# Flutter Rust Bridge
+flutter_rust_bridge = "2.4"
+
+# Lazy static
+once_cell = "1.19"
+
+# Regex
+regex = "1.10"
+
+[profile.release]
+opt-level = "z"     # Optimize for size
+lto = true
+strip = true
+codegen-units = 1
+
+[profile.dev]
+opt-level = 0
+debug = true
