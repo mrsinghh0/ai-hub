@@ -8,6 +8,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 env:
   FLUTTER_VERSION: "3.24.5"
   JAVA_VERSION: "17"
@@ -52,9 +55,12 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: AI Hub v1.0.0
-          body: AI Hub Android APK - Release Build
+          tag_name: v1.0.0-build.${{ github.run_number }}
+          name: AI Hub v1.0.0 (Build ${{ github.run_number }})
+          body: |
+            AI Hub Android APK - Automated Release Build
+
+            Built from commit ${{ github.sha }} on branch ${{ github.ref_name }}
           draft: false
           prerelease: false
           files: mobile/flutter_app/build/app/outputs/flutter-apk/app-release.apk
